@@ -559,7 +559,6 @@ Quita los signos de gato (`#`) y ejecuta (atajo: selecciona las líneas y pulsa 
 #
 # modelo_velocidad <- lm(career_av ~ forty, data = base)  # la regresión del analista
 # summary(modelo_velocidad)
-# knitr::kable(tabla_regresion(modelo_velocidad))          # la misma, en la tabla de la clase
 ```
 
 ## Paso 3. Busca más evidencia
@@ -593,7 +592,6 @@ Quita los signos de gato (`#`) y ejecuta (atajo: selecciona las líneas y pulsa 
 ```{r}
 # modelo_velocidad_pos <- lm(career_av ~ forty + simple_pos, data = base)
 # summary(modelo_velocidad_pos)
-# knitr::kable(tabla_regresion(modelo_velocidad_pos))
 ```
 
 Lee el coeficiente de `forty`: ¿qué signo tiene ahora, qué valor p y cuántas estrellas? Escribe en una frase qué significa, a igualdad de posición, ser una décima de segundo más rápido (`forty` baja 0.1).
