@@ -1,0 +1,737 @@
+---
+title: "Sesión 5. ¿Se puede pronosticar mejor?"
+subtitle: "Mejorar el pronóstico paso a paso, para qué sirve y el cierre del curso"
+author: "Programar con criterio en la era de la IA · Proyecto: pronosticar el éxito en la NFL"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    theme: flatly
+    highlight: tango
+---
+
+```{r formato, include=FALSE}
+# ==========================================================================
+# BLOQUE DE FORMATO
+# Solo sirve para que el documento HTML se vea bien. NO es parte de lo que
+# aprendemos en clase: no hace falta entenderlo ni modificarlo.
+# ==========================================================================
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, comment = "##",
+                      fig.width = 7, fig.height = 4, fig.align = "center")
+options(width = 100)   # que las tablas no se corten en el HTML
+
+# Compilar desde la carpeta de este archivo (así funcionan las rutas como "datos/...")
+if (!is.null(knitr::current_input())) {
+  knitr::opts_knit$set(root.dir = dirname(knitr::current_input(dir = TRUE)))
+}
+```
+
+```{css, echo=FALSE}
+/* BLOQUE DE FORMATO: colores de los recuadros del HTML. No es parte de la clase. */
+.aprende { border-left: 4px solid #2a78d6; background: #f3f7fd; padding: 0.6em 1em; margin: 1em 0; }
+.datos { border-left: 4px solid #1baf7a; background: #f1faf6; padding: 0.6em 1em; margin: 1em 0; }
+.extra { border-left: 4px solid #eb6834; background: #fdf3ec; padding: 0.6em 1em; margin: 1em 0; }
+.aviso { border-left: 4px solid #898781; background: #f6f6f4; padding: 0.6em 1em; margin: 1em 0; }
+.cierre { border: 2px solid #104281; border-radius: 6px; padding: 0.6em 1em; margin: 1em 0; }
+.mensaje { font-size: 1.2em; color: #104281; border-left: 5px solid #104281; padding: 0.3em 1em; margin: 1.2em 0; }
+.etiqueta { display: block; font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6a65; margin-bottom: 0.3em; }
+```
+
+# Antes de empezar: una sesión distinta
+
+::: {.aviso}
+Es la última sesión y **no hay tarea**. Igual que siempre, los dos bloques marcados como **BLOQUE DE FORMATO** no son parte de la clase.
+:::
+
+Hoy hay **dos tipos de secciones**:
+
+| Tipo | Secciones | Qué haces |
+|------|-----------|-----------|
+| **Clase** | 1, 2, 3 y 6 | Lo que aprendes hoy. Léelo con calma y entiende cada paso. |
+| **Extra** | 4 y 5 | Para **ver** lo que se puede hacer con R. Ejecuta y mira; no hace falta entender el código. Al final de cada extra está la página para aprenderlo, si te interesa. |
+
+Los recuadros:
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+Qué hace una función nueva y cómo se escribe.
+:::
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+Qué decidimos sobre los jugadores y por qué. Es la parte de la historia de la NFL.
+:::
+
+::: {.extra}
+[Extra: para ver, no para aprender]{.etiqueta}
+Cómo funciona lo que ves y dónde aprenderlo.
+:::
+
+---
+
+# Hoy
+
+**Dónde nos quedamos.** En la sesión 4 pronosticamos el valor de carrera de corredores, receptores y alas cerradas con lo que se sabe **antes del draft**. Con jugadores nuevos, el modelo casi no le ganaba a pronosticarles a todos el promedio.
+
+**Lo que aprendes hoy:**
+
+::: {.mensaje}
+1. Un modelo se mejora **una idea a la vez**, y cada idea se califica con jugadores que el modelo no vio.
+2. **Más variables no es mejor modelo.**
+3. Un pronóstico que se equivoca puede servir para **ordenar** a los jugadores.
+:::
+
+Igual que en la sesión 4, **ningún modelo usa la ronda ni el número de selección**: solo lo que se sabe del jugador antes del draft.
+
+**Lo nuevo de R en la clase:**
+
+| Función | Para qué sirve |
+|---------|----------------|
+| `update()` | Agregar variables a un modelo que ya existe |
+| `factor(year)` | Efectos fijos por año: un punto de partida para cada generación |
+| `ntile()` | Repartir a los jugadores en grupos del mismo tamaño |
+
+**Plan de la hora:**
+
+| Minutos | Qué hacemos | Tipo |
+|---------|-------------|------|
+| 0–5 | La receta y los paquetes | Clase |
+| 5–25 | Mejorar el pronóstico: cuatro ideas que sirven y una que no | Clase |
+| 25–32 | ¿Para qué sirve un pronóstico que se equivoca? | Clase |
+| 32–40 | ¿Y el *machine learning*? | Extra |
+| 40–52 | Vitrina: cinco cosas que puedes hacer con R | Extra |
+| 52–60 | Cierre del curso | Clase |
+
+---
+
+# 1. La receta y los paquetes
+
+**Antes de la clase**, instala en la **consola** (no en el documento) los paquetes de los extras. Se instalan una sola vez:
+
+```r
+install.packages(c("plotly", "ggridges", "patchwork", "DT", "ranger", "partykit"))
+```
+
+Este bloque revisa que estén todos. Si falta alguno, se detiene y te dice cuál:
+
+```{r}
+paquetes <- c("dplyr", "ggplot2", "plotly", "ggridges", "patchwork", "DT", "ranger", "partykit")
+faltan   <- paquetes[!sapply(paquetes, requireNamespace, quietly = TRUE)]   # los que no están instalados
+if (length(faltan) > 0) {
+  stop("Faltan estos paquetes: ", paste(faltan, collapse = ", "),
+       ". Instálalos en la consola con install.packages() y vuelve a intentarlo.")
+}
+```
+
+Y la receta de siempre:
+
+```{r}
+# Cargamos los paquetes de todos los días y patchwork (para juntar gráficas)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+
+# Números con decimales normales, sin notación científica
+options(scipen = 999)
+
+# Buscamos el archivo: en la misma carpeta, luego en "datos" y, si no está, en internet
+if (file.exists("nfl_data.csv")) {
+  ruta_datos <- "nfl_data.csv"
+} else if (file.exists("datos/nfl_data.csv")) {
+  ruta_datos <- "datos/nfl_data.csv"
+} else {
+  ruta_datos <- paste0("https://raw.githubusercontent.com/phcs971/nfl-draft-dataset/",
+                       "54730eaae524dbff0647e966cd12c739724f807f/nfl_data.csv")
+}
+
+# Leemos el archivo: separado por ";", celdas vacías = NA, caracteres especiales en UTF-8
+nfl <- read.csv(ruta_datos, sep = ";", na.strings = "", encoding = "UTF-8")
+
+# ---------------------------------------------------------------
+# RECETA: de la base cruda (nfl) a la base de análisis (base)
+# ---------------------------------------------------------------
+tags_repetidos <- nfl$tag[duplicated(nfl$tag)]       # nombre + universidad repetidos
+
+base <- nfl %>%
+  rename(forty = X40_yard) %>%                       # nombre más cómodo
+  mutate(drafted = as.logical(drafted)) %>%          # "True"/"False" -> TRUE/FALSE
+  filter(drafted,                                    # solo elegidos: los únicos con carrera
+         year >= 2000, year <= 2014,                 # carreras de al menos diez temporadas
+         simple_pos != "ST",                         # sin pateadores ni despejadores
+         !(tag %in% tags_repetidos)) %>%             # sin filas con la carrera de otra persona
+  mutate(nunca_jugo  = is.na(career_av),             # elegido, pero nunca jugó
+         career_av   = ifelse(nunca_jugo, 0, career_av),
+         g           = ifelse(nunca_jugo, 0, g),
+         pro_bowl    = pro_bowls >= 1,               # fue al menos una vez al Pro Bowl
+         speed_score = weight * 200 / forty^4) %>%   # velocidad ajustada por peso
+  select(player_id, name, college, year, pos, simple_pos, draft_round, draft_pick, age,
+         height, weight, hand_size, arm_length, forty, vert_leap, broad_jump,
+         bench_press, shuttle, speed_score,
+         career_av, pro_bowls, pro_bowl, g, years_as_primary_starter, nunca_jugo,
+         college_games, college_pass_yds, college_pass_td, college_rush_yds,
+         college_rec_yds, college_tackles, college_sacks, college_ints)
+
+# Comprobación: deben ser 3,197 jugadores
+nrow(base)
+```
+
+---
+
+# 2. Mejorar el pronóstico
+
+Hoy pronosticamos a jugadores de **todas** las posiciones. Probamos una idea a la vez y cada una se califica igual que en la sesión 4: con los elegidos de 2011 a 2014, que el modelo **no vio**.
+
+## Preparar los datos (ejecútalo y sigue)
+
+Este bloque es largo, pero solo prepara los datos: no hace falta entender cada línea. Hace cuatro cosas:
+
+1. A cada jugador le deja solo las estadísticas universitarias de **su posición**: yardas por pase para los mariscales, tacleadas para la defensa, y así. Las demás valen 0. Son las columnas `u_...`.
+2. Separa el pasado (`entrena`, 2000 a 2010) del "futuro" (`prueba`, 2011 a 2014).
+3. Crea la herramienta `calificar()`: el error típico de la sesión 4, con los jugadores de prueba.
+4. Crea la herramienta `rellenar()`, que usaremos en la mejora 1.
+
+```{r}
+# ---- 1. Las estadísticas universitarias de cada posición ----
+defensa <- c("DL", "LB", "DB")   # las posiciones de defensa
+
+base <- base %>%
+  mutate(u_pase      = ifelse(simple_pos == "QB", college_pass_yds, 0),                         # yardas por pase
+         u_td_pase   = ifelse(simple_pos == "QB", college_pass_td, 0),                          # pases de anotación
+         u_carrera   = ifelse(simple_pos %in% c("QB", "RB", "WR", "TE"), college_rush_yds, 0),  # yardas por carrera
+         u_recepcion = ifelse(simple_pos %in% c("RB", "WR", "TE"), college_rec_yds, 0),         # yardas por recepción
+         u_tacleadas = ifelse(simple_pos %in% defensa, college_tackles, 0),                     # tacleadas
+         u_capturas  = ifelse(simple_pos %in% defensa, college_sacks, 0),                       # capturas de mariscal
+         u_intercep  = ifelse(simple_pos %in% defensa, college_ints, 0),                        # intercepciones
+         u_partidos  = college_games)                                                           # partidos jugados
+
+# ---- 2. El pasado y el "futuro" ----
+entrena <- base %>% filter(year <= 2010)   # el pasado: de aquí aprendemos
+prueba  <- base %>% filter(year >= 2011)   # el "futuro": con ellos calificamos
+
+# ---- 3. calificar(): el error típico con los jugadores de prueba (resta, al cuadrado, promedio y raíz) ----
+calificar <- function(pronostico) sqrt(mean((prueba$career_av - pronostico)^2))
+
+# ---- 4. rellenar(): cada dato que falta se rellena con la mediana de su posición ----
+columnas <- c("age", "height", "weight", "forty", "vert_leap", "broad_jump", "bench_press", "shuttle",
+              "u_pase", "u_td_pase", "u_carrera", "u_recepcion",
+              "u_tacleadas", "u_capturas", "u_intercep", "u_partidos")
+
+rellenar <- function(datos) {
+  for (col in columnas) {
+    medianas <- tapply(entrena[[col]], entrena$simple_pos, median, na.rm = TRUE)  # mediana de cada posición, SOLO con entrena
+    medianas[is.na(medianas)] <- median(entrena[[col]], na.rm = TRUE)            # si una posición no tiene datos
+    datos[[paste0("sin_", col)]] <- as.numeric(is.na(datos[[col]]))              # sin_...: 1 si el dato faltaba
+    datos[[col]] <- ifelse(is.na(datos[[col]]), medianas[datos$simple_pos], datos[[col]])   # el relleno
+  }
+  # De paso, el logaritmo de las estadísticas universitarias (columnas l_...; las usamos en la mejora 3)
+  a_log <- function(x) log(1 + pmax(x, 0))
+  datos %>% mutate(l_pase      = a_log(u_pase),
+                   l_td_pase   = a_log(u_td_pase),
+                   l_carrera   = a_log(u_carrera),
+                   l_recepcion = a_log(u_recepcion),
+                   l_tacleadas = a_log(u_tacleadas),
+                   l_capturas  = a_log(u_capturas),
+                   l_intercep  = a_log(u_intercep))
+}
+```
+
+## El punto de partida
+
+Primero, la vara de medir: pronosticarles a todos el promedio del pasado. Luego, el modelo de la sesión 4, ahora con todas las posiciones.
+
+```{r}
+calificar(mean(entrena$career_av))   # a todos, el promedio: la vara de medir
+
+modelo_0 <- lm(career_av ~ age + height + weight + forty, data = entrena)
+sum(is.na(predict(modelo_0, prueba)))   # ¿a cuántos jugadores de prueba no les puede pronosticar?
+```
+
+Pronosticarles a todos el promedio se equivoca típicamente por **23.3 puntos**. Y el modelo de la sesión 4 no le puede pronosticar nada a **149 jugadores**: les falta la edad o el tiempo en 40 yardas. Un equipo no puede decir "a ese jugador no lo evalúo porque no corrió".
+
+## Mejora 1. No tirar a nadie
+
+En las tareas 1 y 2 vimos que quitar a los jugadores con faltantes cambia quién está en el análisis. La alternativa es **rellenar**: a cada dato que falta le ponemos la mediana de los jugadores de **su misma posición**, y en una columna nueva (`sin_...`) anotamos que faltaba. Así nadie se queda fuera, y el modelo sabe a quién le rellenamos.
+
+```{r}
+entrena_r <- rellenar(entrena)   # entrena, rellenado
+prueba_r  <- rellenar(prueba)    # prueba, rellenado
+
+modelo_1 <- lm(career_av ~ age + height + weight + forty + sin_forty, data = entrena_r)
+calificar(predict(modelo_1, prueba_r))
+```
+
+Ahora pronostica a los 952 jugadores de prueba, y el error baja de 23.3 a **22.1**.
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+Las medianas se calculan **solo con `entrena`**, también para rellenar a los jugadores de prueba. Si usáramos a los de prueba, el modelo estaría viendo un poco del futuro.
+:::
+
+## Mejora 2. La posición
+
+En la Tarea 4 viste que mezclar posiciones engaña: un liniero lento puede valer más que un receptor rápido. Le agregamos la posición al modelo.
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`update(modelo, . ~ . + variable)` copia un modelo y le agrega una variable. Los puntos quieren decir "lo mismo que ya tenía".
+:::
+
+```{r}
+modelo_2 <- update(modelo_1, . ~ . + simple_pos)
+calificar(predict(modelo_2, prueba_r))
+```
+
+## Mejora 3. Lo que hizo en la universidad
+
+Agregamos las estadísticas universitarias de cada posición, en **logaritmo** (las columnas `l_...`). La idea: pasar de 0 a 1,000 yardas dice mucho de un jugador; pasar de 3,000 a 4,000, bastante menos. El logaritmo hace justo eso: estira las diferencias entre los valores chicos y aprieta las de los grandes.
+
+```{r}
+modelo_3 <- update(modelo_2, . ~ . + l_pase + l_td_pase + l_carrera + l_recepcion +
+                     l_tacleadas + l_capturas + l_intercep + u_partidos)
+calificar(predict(modelo_3, prueba_r))
+```
+
+## Mejora 4. Efectos fijos por año
+
+Algunas generaciones del draft llegan mejores que otras. En economía, eso se toma en cuenta con **efectos fijos**: `factor(year)` le da a cada año su propio punto de partida. Así, cada jugador se compara con los de su misma generación.
+
+Hay un detalle: el modelo no conoce los años 2011 a 2014. A los jugadores de prueba les damos el punto de partida del año más reciente que sí conoce, 2010. Es lo que sabría un equipo en la primavera de 2011.
+
+```{r}
+modelo_4 <- update(modelo_3, . ~ . + factor(year))
+
+prueba_2010 <- prueba_r %>% mutate(year = 2010)   # los años nuevos usan el punto de partida de 2010
+calificar(predict(modelo_4, prueba_2010))
+```
+
+El error baja un poco más, a **21.23**. Las diferencias entre generaciones son chicas: van de 2.1 puntos menos (2009) a 2.2 puntos más (2006) que la generación de 2000.
+
+## Más variables no es mejor modelo
+
+Una idea que suena bien: que la edad, el peso y la velocidad pesen **distinto en cada posición**. Al fin y al cabo, la rapidez importa más en unas posiciones que en otras (lo verás en el mapa de calor de la sección 5).
+
+```{r}
+modelo_grande <- update(modelo_4, . ~ . + simple_pos:(age + weight + forty))   # un coeficiente por posición
+length(coef(modelo_grande))                                                    # cuántos coeficientes tiene ahora
+calificar(predict(modelo_grande, prueba_2010))
+```
+
+El modelo pasa a tener 52 coeficientes, y el error **empeora** a 22.1. Aprendió detalles de los jugadores de 2000 a 2010 que no se repitieron después. A eso se le llama **sobreajuste**: memorizar el pasado en lugar de aprender de él.
+
+## La escalera
+
+```{r, fig.height = 3.4}
+escalera <- data.frame(
+  paso  = c("A todos, el promedio",
+            "1. No tirar a nadie",
+            "2. + la posición",
+            "3. + la universidad",
+            "4. + efectos fijos por año"),
+  error = c(calificar(mean(entrena$career_av)),
+            calificar(predict(modelo_1, prueba_r)),
+            calificar(predict(modelo_2, prueba_r)),
+            calificar(predict(modelo_3, prueba_r)),
+            calificar(predict(modelo_4, prueba_2010))))
+
+ggplot(escalera, aes(x = error, y = factor(paso, levels = rev(paso)))) +   # el primer paso, arriba
+  geom_point(size = 4, color = "#2a78d6") +
+  geom_text(aes(label = sprintf("%.2f", error)), vjust = -1.1) +          # la cifra, dos decimales
+  coord_cartesian(xlim = c(21, 23.6)) +
+  labs(title = "Cuatro ideas bajaron el error",
+       subtitle = "Error típico, con los elegidos de 2011 a 2014",
+       x = "Error típico (menos es mejor)", y = NULL) +
+  theme_minimal()
+```
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+Paso a paso, el error bajó de 23.3 a 21.2 puntos. Ninguna idea es mágica: cada una aporta un poco, y juntas suman. La que no funcionó enseña tanto como las que sí: **una idea se queda solo si mejora el pronóstico con jugadores que el modelo no vio.**
+:::
+
+---
+
+# 3. ¿Para qué sirve un pronóstico que se equivoca?
+
+En la sesión 1 te prometimos responder esto. Un error típico de 21 puntos es grande. Pero un equipo no necesita adivinar el valor exacto de cada jugador: necesita **ordenarlos**. Repartimos a los 952 jugadores de prueba en cinco grupos del mismo tamaño, según el pronóstico de nuestro mejor modelo, y vemos qué les pasó de verdad.
+
+::: {.aprende}
+[Lo que aprendes de R]{.etiqueta}
+`ntile(columna, 5)` reparte las filas en 5 grupos del mismo tamaño: 1 para el 20% con los valores más bajos y 5 para el 20% con los más altos.
+:::
+
+```{r}
+prueba_r <- prueba_r %>%
+  mutate(pronostico = predict(modelo_4, prueba_2010))   # el pronóstico del mejor modelo
+
+quintos <- prueba_r %>%
+  mutate(grupo = ntile(pronostico, 5)) %>%              # 1 = el 20% con pronóstico más bajo; 5 = el más alto
+  group_by(grupo) %>%
+  summarise(jugadores        = n(),
+            valor_real       = round(mean(career_av), 1),                  # lo que acumularon, en promedio
+            pro_bowl         = paste0(round(100 * mean(pro_bowl)), "%"),
+            se_quedaron_en_0 = paste0(round(100 * mean(career_av == 0)), "%"))
+
+knitr::kable(quintos)
+```
+
+```{r, fig.height = 3.6}
+ggplot(quintos, aes(x = factor(grupo), y = valor_real)) +
+  geom_col(fill = "#2a78d6") +
+  geom_text(aes(label = valor_real), vjust = -0.4) +
+  scale_x_discrete(labels = c("20% más bajo", "2", "3", "4", "20% más alto")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.12))) +       # aire arriba para la cifra
+  labs(title = "El modelo se equivoca, pero ordena bien",
+       subtitle = "Elegidos de 2011 a 2014, repartidos en cinco grupos según su pronóstico",
+       x = "Grupo según el pronóstico del modelo", y = "Valor de carrera real promedio") +
+  theme_minimal()
+```
+
+::: {.datos}
+[La decisión sobre los datos]{.etiqueta}
+El 20% de jugadores que el modelo puso arriba acumuló en promedio 34.5 puntos: **más de cuatro veces** lo del 20% de abajo (7.9). Arriba, casi uno de cada tres fue al Pro Bowl; abajo, 3 de cada cien. Y abajo, casi uno de cada tres se quedó en cero. Un pronóstico con mucho error individual puede ser muy útil para **ordenar y descartar**, que es lo que un equipo necesita en el draft.
+:::
+
+## ¿Algún modelo habría visto venir a Tom Brady?
+
+La otra pregunta de la sesión 1. Tom Brady fue elegido en 2000, así que está entre los jugadores con los que el modelo aprendió. Aun así:
+
+```{r}
+entrena_r %>%
+  mutate(pronostico = round(predict(modelo_4, entrena_r), 1)) %>%   # el pronóstico de cada jugador del pasado
+  filter(year == 2000, simple_pos == "QB") %>%                      # los mariscales elegidos en 2000
+  arrange(desc(pronostico)) %>%                                     # del pronóstico más alto al más bajo
+  select(name, draft_pick, forty, pronostico, career_av)
+```
+
+El modelo le pronostica a Brady **menos de cero**: es el último de los 11 mariscales elegidos en 2000. Fue de los más lentos del Combine y nada en sus números lo distinguía. Acumuló 184 puntos, más que cualquier otro jugador del archivo. Ni los equipos ni el modelo lo vieron venir.
+
+---
+
+# 4. Extra · ¿Y el machine learning?
+
+::: {.extra}
+[Extra: para ver, no para aprender]{.etiqueta}
+Ejecuta y mira. Lo único que tienes que llevarte: estos modelos se califican **igual** que una regresión, con jugadores que no vieron.
+:::
+
+El *machine learning* (aprendizaje automático) es una familia de modelos que, en lugar de una recta, aprenden **reglas** a partir de los datos. Veamos dos, con las mismas variables de antes. Como solo hacen preguntas de "¿mayor o menor que?", no necesitan el logaritmo: usamos las yardas tal cual.
+
+```{r}
+formula_ml <- career_av ~ age + height + weight + forty + vert_leap + broad_jump + bench_press +
+  shuttle + simple_pos + u_pase + u_carrera + u_recepcion + u_tacleadas + u_capturas +
+  u_intercep + u_partidos
+```
+
+## Un árbol de decisión
+
+Un **árbol de decisión** pronostica como un *scout*, con preguntas de sí o no: "¿tiene menos de 22.5 años? ¿Es liniero o mariscal? ¿Corre en menos de 5.3 segundos?". En cada hoja del final, el pronóstico es el promedio de los jugadores del pasado que llegaron ahí.
+
+```{r, fig.width = 11, fig.height = 5.5}
+library(rpart)   # viene incluido con R
+
+# maxdepth = 3: a lo más tres preguntas seguidas, para que se pueda leer
+arbol <- rpart(formula_ml, data = entrena_r,
+               control = rpart.control(maxdepth = 3, minbucket = 50, cp = 0.001))
+
+# El dibujo: en cada hoja, el pronóstico y cuántos jugadores del pasado llegaron ahí
+plot(partykit::as.party(arbol), type = "simple", gp = grid::gpar(fontsize = 9),
+     tp_args = list(FUN = function(hoja) c(round(hoja$prediction, 1), paste("n =", hoja$n))))
+
+calificar(predict(arbol, prueba_r))
+```
+
+Se lee de arriba hacia abajo. La **primera pregunta es la edad**: la misma lección de la sesión 4, encontrada sola por el algoritmo.
+
+## Un bosque aleatorio
+
+Un solo árbol es inestable: con otros jugadores, haría otras preguntas. Un **bosque aleatorio** hace 500 árboles, cada uno con una muestra distinta de jugadores y de variables, y promedia sus pronósticos. También dice qué variables usó más.
+
+```{r, fig.height = 4.2}
+bosque <- ranger::ranger(formula_ml, data = entrena_r, num.trees = 500, mtry = 3,
+                         min.node.size = 50, importance = "permutation", seed = 2026)
+
+calificar(predict(bosque, prueba_r)$predictions)
+
+importancia <- data.frame(variable    = names(bosque$variable.importance),
+                          importancia = bosque$variable.importance)
+
+ggplot(importancia, aes(x = importancia, y = reorder(variable, importancia))) +
+  geom_col(fill = "#eb6834") +
+  labs(title = "Para el bosque, lo que más importa es el peso y la velocidad",
+       subtitle = "Cuánto empeora el pronóstico si se revuelve al azar cada variable",
+       x = "Importancia", y = NULL) +
+  theme_minimal()
+```
+
+## ¿Quién ganó?
+
+| Modelo | Error típico |
+|--------|-------------:|
+| Regresión con las cuatro mejoras (sección 2) | 21.23 |
+| Árbol de decisión | 22.60 |
+| Bosque aleatorio | 22.30 |
+
+**Aquí gana la regresión.** El *machine learning* brilla con muchísimos datos y relaciones complicadas. Aquí hay pocos jugadores para aprender y mucho azar en las carreras. La regla es la misma para todos los modelos: se califican con jugadores que no vieron, y se quedan solo si ganan.
+
+::: {.extra}
+[Para aprenderlo]{.etiqueta}
+
+- [Árboles de decisión, Random Forest y Gradient Boosting](https://cienciadedatos.net/documentos/33_arboles_de_prediccion_bagging_random_forest_boosting), de Joaquín Amat Rodrigo. En español, con código en R.
+- [*Introducción a la ciencia de datos*](https://rafalab.dfci.harvard.edu/dslibro/), de Rafael Irizarry. Libro gratis en español; la parte V es de *machine learning*.
+- [*An Introduction to Statistical Learning*](https://www.statlearning.com/). El libro clásico, gratis en PDF y en inglés; el capítulo 8 es de árboles y bosques.
+:::
+
+---
+
+# 5. Extra · Vitrina: cinco cosas que puedes hacer con R
+
+::: {.extra}
+[Extra: para ver, no para aprender]{.etiqueta}
+Todo usa los mismos datos del curso. Ejecuta cada bloque y juega con el resultado. Debajo de cada uno está cómo se hace y dónde aprenderlo.
+:::
+
+## 5.1 Una gráfica interactiva: ¿quién es cada punto?
+
+Pasa el ratón sobre un punto para ver quién es, haz zoom arrastrando, y apaga o prende posiciones haciendo clic en la leyenda.
+
+```{r, fig.height = 5}
+grafica <- ggplot(prueba_r, aes(x = pronostico, y = career_av, color = simple_pos,
+                                text = paste0(name, " (", pos, ", ", year, ")",
+                                              "<br>Pronóstico: ", round(pronostico),
+                                              "<br>Real: ", career_av))) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +   # pronóstico perfecto
+  geom_point(alpha = 0.6) +
+  labs(title = "Pronóstico y valor real de los elegidos de 2011 a 2014",
+       x = "Pronóstico del modelo 4", y = "Valor de carrera real", color = "Posición") +
+  theme_minimal()
+
+plotly::ggplotly(grafica, tooltip = "text")
+```
+
+Busca los puntos más altos: son las estrellas que el modelo subestimó. Los de la derecha y abajo son los que prometían y no rindieron.
+
+::: {.extra}
+[Cómo se hace y dónde aprenderlo]{.etiqueta}
+`plotly::ggplotly()` vuelve interactiva cualquier gráfica de ggplot2; lo que pones en `text` es lo que se ve al pasar el ratón. Más ejemplos: [Gráficas interactivas en The R Graph Gallery](https://r-graph-gallery.com/interactive-charts.html) y [Plotly para R](https://plotly.com/r/).
+:::
+
+## 5.2 ¿Qué tan rápido corre cada posición?
+
+```{r, fig.height = 4.5}
+ggplot(base %>% filter(!is.na(forty)),                                  # solo quienes corrieron
+       aes(x = forty, y = reorder(simple_pos, forty, median), fill = simple_pos)) +
+  ggridges::geom_density_ridges(alpha = 0.75, scale = 1.6, show.legend = FALSE) +
+  labs(title = "Los receptores y los DB corren más rápido; los linieros ofensivos, más lento",
+       subtitle = "Tiempo en la carrera de 40 yardas del Combine · elegidos de 2000 a 2014",
+       x = "Segundos en 40 yardas (menos es más rápido)", y = NULL) +
+  theme_minimal()
+```
+
+Es la razón de la Tarea 4: con todas las posiciones juntas, la velocidad parecía no importar porque los más lentos, los linieros ofensivos, son también los que más valor acumulan.
+
+::: {.extra}
+[Cómo se hace y dónde aprenderlo]{.etiqueta}
+`ggridges::geom_density_ridges()` dibuja la distribución de una variable para cada grupo, una encima de otra, como cordilleras. Más ejemplos: [Ridgeline chart en The R Graph Gallery](https://r-graph-gallery.com/ridgeline-plot.html).
+:::
+
+## 5.3 Un mapa de calor: ¿qué prueba importa en cada posición?
+
+Cada cuadro es la correlación de una medida con el valor de carrera, **dentro de una posición**. En las pruebas de tiempo cambiamos el signo, para que en todas "más" sea "mejor".
+
+```{r, fig.height = 4.5}
+# Una herramienta: la correlación de una medida con el valor de carrera, por posición
+correlacion_por_posicion <- function(columna, etiqueta) {
+  base %>%
+    group_by(simple_pos) %>%
+    summarise(medida      = etiqueta,
+              con_dato    = sum(!is.na(.data[[columna]])),                       # cuántos tienen el dato
+              correlacion = cor(.data[[columna]], career_av, use = "complete.obs"))
+}
+
+correlaciones <- bind_rows(
+  correlacion_por_posicion("height", "Estatura"),
+  correlacion_por_posicion("weight", "Peso"),
+  correlacion_por_posicion("forty", "Rapidez (40 yardas)") %>% mutate(correlacion = -correlacion),
+  correlacion_por_posicion("vert_leap", "Salto vertical"),
+  correlacion_por_posicion("broad_jump", "Salto largo"),
+  correlacion_por_posicion("bench_press", "Press de banca"),
+  correlacion_por_posicion("shuttle", "Agilidad (shuttle)") %>% mutate(correlacion = -correlacion)
+) %>%
+  mutate(correlacion = ifelse(con_dato < 30, NA, correlacion),   # con menos de 30 jugadores, no la mostramos
+         medida      = factor(medida, levels = unique(medida)))     # las columnas en el orden en que las pusimos
+
+ggplot(correlaciones, aes(x = medida, y = simple_pos, fill = correlacion)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(correlacion, 2)), size = 3.2) +
+  scale_fill_gradient2(low = "#c0392b", mid = "white", high = "#2a78d6", midpoint = 0,
+                       na.value = "grey92") +
+  labs(title = "La rapidez importa en casi todas las posiciones; la estatura, en casi ninguna",
+       subtitle = "Correlación de cada medida con el valor de carrera, dentro de cada posición",
+       x = NULL, y = NULL, fill = "Correlación") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+Los cuadros grises son posiciones donde casi nadie hace esa prueba, como el press de banca de los mariscales.
+
+::: {.extra}
+[Cómo se hace y dónde aprenderlo]{.etiqueta}
+`geom_tile()` dibuja un cuadro por cada combinación de fila y columna, y `scale_fill_gradient2()` lo colorea de rojo (negativo) a azul (positivo). Más ejemplos: [Heatmap en The R Graph Gallery](https://r-graph-gallery.com/heatmap).
+:::
+
+## 5.4 La ficha de un prospecto y sus comparables
+
+Así trabajan muchos *scouts*: miden a un prospecto contra los de su posición y buscan a los jugadores del pasado **más parecidos** a él. Lo hacemos con Aaron Donald, elegido en la selección 13 de 2014.
+
+```{r}
+jugador   <- "Aaron Donald"                                     # cambia el nombre y vuelve a ejecutar
+prospecto <- base %>% filter(name == jugador)
+su_puesto <- base %>% filter(simple_pos == prospecto$simple_pos)   # los de su misma posición
+
+# Percentil: qué porcentaje de su posición queda por debajo de él (en los tiempos, por encima)
+percentil <- function(columna, menos_es_mejor = FALSE) {
+  x <- su_puesto[[columna]]
+  valor <- prospecto[[columna]]
+  if (menos_es_mejor) round(100 * mean(x > valor, na.rm = TRUE)) else round(100 * mean(x < valor, na.rm = TRUE))
+}
+
+ficha <- data.frame(medida    = c("Estatura", "Peso", "Rapidez (40 yardas)", "Salto vertical",
+                                  "Salto largo", "Press de banca", "Agilidad (shuttle)"),
+                    percentil = c(percentil("height"), percentil("weight"), percentil("forty", TRUE),
+                                  percentil("vert_leap"), percentil("broad_jump"),
+                                  percentil("bench_press"), percentil("shuttle", TRUE)))
+
+# Los comparables: los de su posición, elegidos antes que él, con las medidas más parecidas
+pruebas <- c("height", "weight", "forty", "vert_leap", "broad_jump", "bench_press", "shuttle")
+z <- scale(su_puesto[pruebas])                              # cada medida en la escala de su posición
+z_prospecto <- z[su_puesto$name == jugador, ]               # la fila del prospecto
+su_puesto$distancia <- sqrt(rowMeans(sweep(z, 2, z_prospecto)^2, na.rm = TRUE))   # qué tan diferente es cada uno
+
+comparables <- su_puesto %>%
+  filter(year < prospecto$year) %>%                         # solo jugadores del pasado
+  arrange(distancia) %>%                                    # del más parecido al menos parecido
+  select(name, year, pos, distancia, career_av) %>%
+  head(5)
+```
+
+```{r, fig.width = 9, fig.height = 4}
+grafica_ficha <- ggplot(ficha, aes(x = percentil, y = factor(medida, levels = rev(medida)))) +
+  geom_col(fill = "#2a78d6") +
+  geom_text(aes(label = percentil), hjust = -0.3) +
+  geom_vline(xintercept = 50, linetype = "dashed", color = "grey50") +    # el jugador de en medio
+  coord_cartesian(xlim = c(0, 105)) +
+  labs(title = paste("La ficha de", jugador),
+       subtitle = "Percentil frente a su posición (50 = el de en medio)", x = "Percentil", y = NULL) +
+  theme_minimal()
+
+grafica_comparables <- ggplot(comparables, aes(x = career_av, y = reorder(name, -distancia))) +
+  geom_col(fill = "#eb6834") +
+  geom_text(aes(label = career_av), hjust = -0.3) +
+  coord_cartesian(xlim = c(0, max(comparables$career_av) * 1.15)) +
+  labs(title = "Sus comparables del pasado",
+       subtitle = "Arriba, el más parecido", x = "Valor de carrera", y = NULL) +
+  theme_minimal()
+
+grafica_ficha | grafica_comparables      # patchwork: una al lado de la otra
+```
+
+La ficha cuenta por qué Aaron Donald no fue de los primeros elegidos: era **más bajo que casi todos** los linieros defensivos. Pero en rapidez y fuerza estaba entre los mejores de su posición. Su comparable más parecido es Geno Atkins, otro liniero defensivo bajo y explosivo que acumuló 89 puntos. Donald llegó a 123. Prueba con otros jugadores: `"Russell Wilson"`, `"Julio Jones"` o `"Luke Kuechly"`.
+
+::: {.extra}
+[Cómo se hace y dónde aprenderlo]{.etiqueta}
+`scale()` pone todas las medidas en la misma escala, para poder comparar libras con segundos; los comparables son los jugadores con la menor **distancia** al prospecto. `patchwork` junta dos gráficas con `|`. Más ejemplos: [patchwork](https://patchwork.data-imaginist.com/).
+:::
+
+## 5.5 Una tabla buscable: busca a tu jugador favorito
+
+```{r}
+prueba_r %>%
+  transmute(Jugador     = name,
+            Año         = year,
+            Posición    = pos,
+            Universidad = college,
+            Pronóstico  = round(pronostico, 1),
+            Real        = career_av,
+            Diferencia  = round(career_av - pronostico, 1)) %>%
+  DT::datatable(rownames = FALSE, filter = "top",
+                options = list(pageLength = 10,
+                               language = list(search = "Buscar:", lengthMenu = "Mostrar _MENU_ jugadores",
+                                               info = "Jugadores _START_ a _END_ de _TOTAL_", infoFiltered = "(de _MAX_ en total)",
+                                               paginate = list(previous = "Anterior", `next` = "Siguiente"))))
+```
+
+Ordena por `Diferencia` para ver a quiénes el modelo subestimó más y sobreestimó más.
+
+::: {.extra}
+[Cómo se hace y dónde aprenderlo]{.etiqueta}
+`DT::datatable()` convierte una tabla en una tabla interactiva dentro del HTML: buscar, filtrar y ordenar con un clic. Más ejemplos: [DT, la documentación oficial](https://rstudio.github.io/DT/).
+:::
+
+---
+
+# 6. Cierre del curso
+
+## Lo que hiciste en cinco sesiones
+
+| Sesión | La pregunta | Lo que aprendiste en R | Lo que encontraste en los datos |
+|--------|-------------|------------------------|--------------------------------|
+| 1 | ¿Qué datos tenemos y cuáles sirven? | Cargar, mirar y filtrar una tabla; GitHub | De 14,163 prospectos a una base de análisis, y que quitar faltantes cambia quién queda |
+| 2 | ¿Quiénes entran al análisis? | `filter()`, `mutate()`, `select()` y la receta | 3,197 elegidos, y cada fila que sale tiene una razón escrita |
+| 3 | ¿Cuánto vale un jugador elegido? | `group_by()`, `summarise()` y `ggplot()` | La mediana (8) cuenta otra historia que el promedio (18); la ronda importa mucho |
+| 4 | ¿Se puede pronosticar antes del draft? | `lm()`, `summary()` y `predict()` | Un modelo se califica con jugadores que no vio; un R² alto no basta |
+| 5 | ¿Se puede pronosticar mejor? | `update()`, efectos fijos y `ntile()` | Cuatro ideas bajaron el error de 23.3 a 21.2; más variables no es mejor modelo; el modelo sirve para ordenar, no para adivinar |
+
+## Las tres preguntas de la sesión 1
+
+::: {.cierre}
+**1. ¿Por qué un buen Combine aumenta la probabilidad de ser elegido, pero no garantiza una buena carrera?** Porque las pruebas sí dicen algo (la rapidez importa en casi todas las posiciones), pero explican poco: con la edad, las medidas, la rapidez, la posición y la universidad, el modelo sigue equivocándose típicamente por 21 puntos. Lesiones, entrenadores, el equipo que te elige y la suerte no están en los datos.
+
+**2. ¿Cómo es posible que nadie eligiera a Tom Brady hasta la selección 199? ¿Lo habría visto venir algún modelo?** No. Con lo que se sabía antes del draft, nuestro modelo le pronostica menos de cero: el último de los 11 mariscales de su año.
+
+**3. ¿Sirve de algo un pronóstico que se equivoca por tantos puntos?** Depende de para qué. Para adivinar la carrera de un jugador, poco. Para **ordenar** a cientos de prospectos, mucho: los que el modelo pone arriba rindieron más de cuatro veces lo que rindieron los de abajo.
+:::
+
+## Lo que no cambia
+
+La regla del curso sigue valiendo, ahora que ya sabes programar:
+
+::: {.mensaje}
+La IA puede escribir el código por ti. Tú decides qué preguntar, compruebas que esté bien y respondes por lo que presentas.
+:::
+
+Viste por qué: una línea de limpieza que parece inofensiva puede dejar fuera a casi todos los mariscales; un promedio puede esconder que uno de cada tres se quedó en cero; un R² alto puede pronosticar peor; un modelo con más variables puede memorizar el pasado en lugar de aprender de él; y mezclar posiciones puede hacer que la velocidad parezca no servir.
+
+## Tu repositorio es tu portafolio
+
+Tu repositorio `curso-programacion-r` ya cuenta una historia completa: los datos, cada decisión de limpieza con su razón, cinco sesiones de análisis y tus conclusiones. Ponle un README claro, revisa que cada archivo compile y agrégalo a tu currículum. Es un proyecto real de pronóstico, hecho por ti.
+
+---
+
+# 7. Recursos para seguir aprendiendo
+
+Todos son gratis y en línea. Los que están en inglés lo dicen.
+
+**Para seguir con R**
+
+- [*R para la Ciencia de Datos* (2e)](https://davidrsch.github.io/r4ds-es/): la traducción al español del libro más usado para aprender R. Lo que vimos en el curso (`filter()`, `mutate()`, `summarise()`, `ggplot()`) está en sus primeros capítulos.
+- Hojas de referencia en español, para tener a la mano: [transformar datos con dplyr](https://rstudio.github.io/cheatsheets/translations/spanish/data-transformation_es.pdf), [gráficas con ggplot2](https://rstudio.github.io/cheatsheets/translations/spanish/data-visualization_es.pdf) y [R Markdown](https://rstudio.github.io/cheatsheets/translations/spanish/rmarkdown_es.pdf). Hay más en la [página de traducciones](https://rstudio.github.io/cheatsheets/translations.html).
+
+**Para regresión y pronóstico**
+
+- [Introducción a la regresión lineal múltiple](https://cienciadedatos.net/documentos/25_regresion_lineal_multiple), de Joaquín Amat Rodrigo: `lm()`, cómo leer `summary()`, R² ajustado y más, en español.
+- [*Introducción a la ciencia de datos*](https://rafalab.dfci.harvard.edu/dslibro/), de Rafael Irizarry: un libro completo en español, de R básico a regresión y *machine learning*.
+- [*Introduction to Econometrics with R*, capítulo 10](https://www.econometrics-with-r.org/10-rwpd.html) (en inglés): efectos fijos, como los de la mejora 4.
+
+**Para *machine learning***
+
+- [Árboles de decisión, Random Forest y Gradient Boosting](https://cienciadedatos.net/documentos/33_arboles_de_prediccion_bagging_random_forest_boosting), de Joaquín Amat Rodrigo, en español.
+- [*An Introduction to Statistical Learning*](https://www.statlearning.com/) (en inglés, PDF gratis): el libro clásico para empezar.
+
+**Para gráficas**
+
+- [The R Graph Gallery](https://r-graph-gallery.com/) (en inglés): cientos de gráficas hechas en R, cada una con su código.
+- [Plotly para R](https://plotly.com/r/) (en inglés): gráficas interactivas como la de la sección 5.1.
+
+**Si quieres seguir jugando** (no se entrega): cambia el jugador de la ficha en la sección 5.4; agrega o quita variables del `modelo_4` y mira si baja el error con `calificar()`; o cambia `maxdepth` en el árbol y mira qué preguntas hace.
